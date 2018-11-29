@@ -1,0 +1,13 @@
+directory: "storage"
+port: 5000
+save: True
+servers:
+-
+  IP: localhost
+  PORT: 5001
+-
+  IP: localhost
+  PORT: 5002
+-
+  IP: localhost
+  PORT: 80
