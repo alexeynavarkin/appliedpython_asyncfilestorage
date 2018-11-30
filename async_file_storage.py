@@ -1,8 +1,10 @@
+import argparse
 import asyncio
+from aiohttp import web, ClientSession
 from os.path import join
 from os import stat
+from sys import argv
 import yaml
-from aiohttp import web, ClientSession
 
 
 class AsyncFileStorage:
@@ -105,12 +107,26 @@ def make_chunked(data, n):
     chunk_size = len(data)//n
     return [data[start:start + chunk_size] for start in range(0, len(data), chunk_size)]
 
+
 def load_config(config_path):
     with open(config_path, 'r') as config_file:
         config = yaml.load(config_file)
+        print(f"Config loaded from: '{config_path}'")
         return config
 
+def parse_args(args):
+    parser = argparse.ArgumentParser(description='Async File Storage')
+    parser.add_argument('-c',
+                        '--config',
+                        action="store",
+                        type=str,
+                        default="config.yaml",
+                        help='Config file')
+    return parser.parse_args(args)
+
+
 if __name__ == "__main__":
-    config = load_config("config.yaml")
+    args = parse_args(argv[1:])
+    config = load_config(args.config)
     afs = AsyncFileStorage(**config)
     afs.run()
