@@ -1,13 +1,13 @@
-directory: "storage"
+data_dir: "storage"
 port: 5000
-save: True
-servers:
--
-  IP: localhost
-  PORT: 5001
--
-  IP: localhost
-  PORT: 5002
--
-  IP: localhost
-  PORT: 80
+save_files: True
+nodes:
+  -
+    url: "http://localhost:5001"
+    save_files: True
+  -
+    url: "http://localhost:5002"
+    save_files: False
+  -
+    url: "http://localhost:80"
+    save_files: True

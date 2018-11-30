@@ -2,15 +2,15 @@ import asyncio
 from os.path import join
 from os import stat
 import yaml
-from aiohttp import web
-import aiohttp
+from aiohttp import web, ClientSession
 
 
 class AsyncFileStorage:
-    def __init__(self, port=5000, data_dir="storage", servers = (), config_path="config.yaml"):
+    def __init__(self, port=5000, save_files=True ,data_dir="storage", nodes=()):
         self._port = port
         self._data_dir = data_dir
-        self._servers = servers
+        self._nodes = nodes
+        self._save_files = save_files
 
     def write_file(self, file_name, data):
         with open(file_name, "w") as file:
@@ -18,50 +18,73 @@ class AsyncFileStorage:
             return True
 
     async def fetch(self, url):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
-                    if resp.status == 200:
-                        return resp.text()
-        except:
-            pass
+        async with ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    return await resp.text()
+                else:
+                    raise FileNotFoundError
 
-    async def api_call(self, server, file_name):
-        print(f"API CALL: {server}, {file_name}")
-        if await self.fetch("/".join([server, "api", file_name])):
-            print(f"API CALL: {server}, {file_name} OK")
-            return server
-        print(f"API CALL: {server}, {file_name} NOT FOUND")
+    async def poll_nodes(self, file_name):
+        futures = [self.api_call(node_id, file_name) for node_id in range(len(self._nodes))]
+        done, _ = await asyncio.wait(futures)
+        success_nodes = []
+        for future in done:
+            if not future.exception():
+                success_nodes.append(future.result())
+        return success_nodes
+
+    async def api_call(self, node_id, file_name):
+        get = "/".join([self._nodes[node_id]['url'], "api", file_name])
+        print(f"POLLING NODE: '{get}'")
+        if await self.fetch(get):
+            print(f"POLLING SUCCESS: '{get}'")
+            return node_id
+
+    async def download_file(self, node_id, file_name):
+        get = "/".join([self._nodes[node_id]['url'], file_name])
+        print(f"DOWNLOADING FROM: '{get}'")
+        data = await self.fetch(get)
+        print(f"DOWNLOADED FROM '{get}':\n----\n{data}\n----")
+        if self._save_files and self._nodes[node_id]['save_files']:
+            print(f"SAVING LOCAL: '{file_name}''")
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self.write_file, join(self._data_dir, file_name), data)
+        return data
 
     async def get_api_handler(self, request: web.Request) -> web.Response:
-        file_name = request.match_info.get(join(self._data_dir, 'file_name'))
-        file_size = stat(file_name).st_size
-        return web.Response(text=str(file_size))
+        file_name = request.match_info.get('file_name')
+        try:
+            file_size = stat(join(self._data_dir, file_name)).st_size
+        except FileNotFoundError:
+            return web.Response(status=404)
+        else:
+            return web.Response(text=str(file_size))
 
     async def get_file_handler(self, request: web.Request) -> web.Response:
         file_name = request.match_info.get('file_name')
-        print(f"REQ: {file_name}")
         file_path = join(self._data_dir, file_name)
+        print(f"REQ: '{file_name}'")
+
         try:
             file = open(file_path, 'r')
+            print(f"FOUND LOCAL: '{file_path}'")
             loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, file.read)
-            print(f"GOT IN: {file_path}")
+            data = await loop.run_in_executor(None, file.read)
+
         except FileNotFoundError:
-            print(f"NOT FOUND: {file_path}")
-            futures = [self.api_call(server, file_name) for server in config["servers"]]
-            done, _ = await asyncio.wait(futures, timeout=0.1)
-            for future in done:
-                if not future.exception() and future.result():
-                    data = await self.fetch(future.result())
-                    loop = asyncio.get_running_loop()
-                    await loop.run_in_executor(None, self.write_file, file_path, data)
-                    return web.Response(text=data)
+            print(f"NOT FOUND LOCAL: '{file_path}' POLLING NODES")
+            success_nodes = await self.poll_nodes(file_name)
+            if success_nodes:
+                print(f"FILE '{file_name}' FOUND ON NODES: {success_nodes}")
+                data = await self.download_file(success_nodes[0], file_name)
+                return web.Response(text=data)
+            print(f"NOT FOUND LOCAL AND NODES: '{file_name}' RETURNING 404")
             return web.Response(status=404)
+
         else:
             file.close()
-            print(f"NO LOCAL AND REMOTE RETURNING 404")
-            return web.Response(text=result)
+            return web.Response(text=data)
 
     def run(self):
         app = web.Application()
@@ -74,17 +97,20 @@ class AsyncFileStorage:
         # await site.start()
 
 
+def make_chunked(data, n):
+    """
+        Method to chunk data, works properly only if len(data) >> chunk_size
+        Maybe if multiple servers has target file, split into chunks and download it parallel then concat
+    """
+    chunk_size = len(data)//n
+    return [data[start:start + chunk_size] for start in range(0, len(data), chunk_size)]
+
 def load_config(config_path):
     with open(config_path, 'r') as config_file:
         config = yaml.load(config_file)
-        servers = []
-        for server in config["servers"]:
-            servers.append("".join(["http://", str(server["IP"]), ":", str(server["PORT"])]))
-        config["servers"] = servers
-        print(config)
         return config
 
 if __name__ == "__main__":
     config = load_config("config.yaml")
-    afs = AsyncFileStorage(5000, servers=config['servers'])
+    afs = AsyncFileStorage(**config)
     afs.run()
