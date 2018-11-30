@@ -29,3 +29,9 @@ class BaseTest(TestCase):
     def test_download_empty_file(self):
         response = get("http://localhost:5000/b.txt")
         self.assertEqual('', response.text)
+
+    def test_404(self):
+        response = get("http://localhost:5000/404.txt")
+        self.assertEqual(404, response.status_code)
+
+
