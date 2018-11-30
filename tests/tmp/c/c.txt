@@ -1,0 +1,1 @@
+This is plain file from NODE C.
