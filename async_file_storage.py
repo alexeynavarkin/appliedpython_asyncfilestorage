@@ -14,12 +14,12 @@ class AsyncFileStorage:
         self._nodes = nodes
         self._save_files = save_files
 
-    def write_file(self, file_name, data):
+    def write_file(self, file_name: str, data: str) -> bool:
         with open(file_name, "w") as file:
             file.write(data)
             return True
 
-    async def fetch(self, url):
+    async def fetch(self, url: str) -> str:
         async with ClientSession() as session:
             async with session.get(url) as resp:
                 if resp.status == 200:
@@ -27,7 +27,7 @@ class AsyncFileStorage:
                 else:
                     raise FileNotFoundError
 
-    async def poll_nodes(self, file_name):
+    async def poll_nodes(self, file_name: str) -> list:
         futures = [self.api_call(node_id, file_name) for node_id in range(len(self._nodes))]
         done, _ = await asyncio.wait(futures)
         success_nodes = []
@@ -36,14 +36,14 @@ class AsyncFileStorage:
                 success_nodes.append(future.result())
         return success_nodes
 
-    async def api_call(self, node_id, file_name):
+    async def api_call(self, node_id: int, file_name: str) -> int:
         get = "/".join([self._nodes[node_id]['url'], "api", file_name])
         print(f"POLLING NODE: '{get}'")
         if await self.fetch(get):
             print(f"POLLING SUCCESS: '{get}'")
             return node_id
 
-    async def download_file(self, node_id, file_name):
+    async def download_file(self, node_id: int, file_name: str) -> str:
         get = "/".join([self._nodes[node_id]['url'], file_name])
         print(f"DOWNLOADING FROM: '{get}'")
         data = await self.fetch(get)
@@ -99,7 +99,7 @@ class AsyncFileStorage:
         # await site.start()
 
 
-def make_chunked(data, n):
+def chunkify(data, n):
     """
         Method to chunk data, works properly only if len(data) >> chunk_size
         Maybe if multiple servers has target file, split into chunks and download it parallel then concat
@@ -108,7 +108,7 @@ def make_chunked(data, n):
     return [data[start:start + chunk_size] for start in range(0, len(data), chunk_size)]
 
 
-def load_config(config_path):
+def load_config(config_path: str) -> dict:
     with open(config_path, 'r') as config_file:
         config = yaml.load(config_file)
         print(f"Config loaded from: '{config_path}'")
